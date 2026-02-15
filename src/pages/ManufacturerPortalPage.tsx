@@ -96,25 +96,38 @@ export default function ManufacturerPortalPage() {
 
   const loadProfile = async () => {
     const { data } = await supabase.from("manufacturers").select("*").eq("user_id", user.id).maybeSingle();
-    setProfile(data as ManufacturerProfile | null);
 
-    // Check approval status
+    // Check approval status IMMEDIATELY - sign out if not approved
     const profileStatus = (data as any)?.status;
+
     if (profileStatus === 'pending') {
+      // Sign them out immediately
+      await supabase.auth.signOut();
+      setUser(null);
       toast({
         title: "Account Pending Approval",
-        description: "Your account is awaiting approval from Central Admin. You cannot create batches yet.",
-        variant: "default",
-        duration: 6000
+        description: "Your account is awaiting approval from Central Admin. You will receive an email once approved.",
+        variant: "destructive",
+        duration: 8000
       });
-    } else if (profileStatus === 'rejected') {
+      return; // Don't set profile
+    }
+
+    if (profileStatus === 'rejected') {
+      // Sign them out immediately
+      await supabase.auth.signOut();
+      setUser(null);
       toast({
         title: "Account Rejected",
-        description: "Your manufacturer account was rejected. Please contact support.",
+        description: "Your manufacturer account was rejected. Please contact support for more information.",
         variant: "destructive",
-        duration: 6000
+        duration: 8000
       });
+      return; // Don't set profile
     }
+
+    // Only set profile if status is 'approved'
+    setProfile(data as ManufacturerProfile | null);
   };
 
   const loadMedicines = async () => {
