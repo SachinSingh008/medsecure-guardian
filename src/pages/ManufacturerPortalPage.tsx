@@ -66,6 +66,19 @@ export default function ManufacturerPortalPage() {
   });
 
   useEffect(() => {
+    // IMPORTANT: Check if admin is logged in (localStorage)
+    const adminLoggedIn = localStorage.getItem('medsecure_admin_logged_in');
+    if (adminLoggedIn === 'true') {
+      // Admin trying to access manufacturer portal - block them
+      localStorage.removeItem('medsecure_admin_logged_in');
+      toast({
+        title: "Access Denied",
+        description: "This is the Manufacturer Portal. Admin access is through /admin with Admin credentials.",
+        variant: "destructive",
+        duration: 7000
+      });
+    }
+
     supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });

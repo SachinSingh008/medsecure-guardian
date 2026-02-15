@@ -33,6 +33,20 @@ export default function CentralAdminPage() {
   });
 
   useEffect(() => {
+    // IMPORTANT: Central Admin uses HARDCODED credentials only
+    // If user has Supabase session, sign them out (they're a manufacturer)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        // Manufacturer is logged in - kick them out from admin
+        supabase.auth.signOut();
+        toast({
+          title: "Access Denied",
+          description: "Central Admin uses separate credentials. Manufacturer accounts cannot access this portal.",
+          variant: "destructive"
+        });
+      }
+    });
+
     // Check if admin was logged in before refresh
     const savedAdminState = localStorage.getItem('medsecure_admin_logged_in');
     if (savedAdminState === 'true') {
@@ -67,8 +81,11 @@ export default function CentralAdminPage() {
     setScanLogs(logRes.data || []);
   };
 
-  const handleAdminLogin = () => {
+  const handleAdminLogin = async () => {
     if (loginEmail === ADMIN_EMAIL && loginPassword === ADMIN_PASSWORD) {
+      // Sign out any existing Supabase session
+      await supabase.auth.signOut();
+
       setIsAdmin(true);
       localStorage.setItem('medsecure_admin_logged_in', 'true');
       setShowLoginModal(false);
