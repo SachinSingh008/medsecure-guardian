@@ -103,7 +103,20 @@ export default function ManufacturerPortalPage() {
   const loadProfile = async () => {
     const { data } = await supabase.from("manufacturers").select("*").eq("user_id", user.id).maybeSingle();
 
-    // Check approval status IMMEDIATELY - sign out if not approved
+    // 1. Check if profile exists (if not, admin deleted it)
+    if (!data) {
+      await supabase.auth.signOut();
+      setUser(null);
+      toast({
+        title: "Account Not Found",
+        description: "Your manufacturer account has been removed by the administrator.",
+        variant: "destructive",
+        duration: 8000
+      });
+      return;
+    }
+
+    // 2. Check approval status IMMEDIATELY - sign out if not approved
     const profileStatus = (data as any)?.status;
 
     if (profileStatus === 'pending') {

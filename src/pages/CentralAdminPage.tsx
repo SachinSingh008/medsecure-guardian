@@ -9,6 +9,7 @@ import {
   Shield, Factory, QrCode, AlertTriangle, Users, Lock, Search,
   CheckCircle2, Key, Activity, LogOut, UserPlus, Trash2, X, Check, Clock
 } from "lucide-react";
+import { Tables } from "@/integrations/supabase/types";
 
 // Hardcoded admin credentials
 const ADMIN_EMAIL = "Admin@gmail.com";
@@ -23,7 +24,7 @@ export default function CentralAdminPage() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true); // Block rendering until auth checked
 
   // Data state
-  const [manufacturers, setManufacturers] = useState<any[]>([]);
+  const [manufacturers, setManufacturers] = useState<Tables<"manufacturers">[]>([]);
   const [medicines, setMedicines] = useState<any[]>([]);
   const [codes, setCodes] = useState<any[]>([]);
   const [scanLogs, setScanLogs] = useState<any[]>([]);
@@ -116,7 +117,7 @@ export default function CentralAdminPage() {
   const handleApproveUser = async (userId: string) => {
     const { error } = await supabase
       .from("manufacturers")
-      .update({ status: "approved" } as any)
+      .update({ status: "approved" })
       .eq("id", userId);
 
     if (error) {
@@ -131,7 +132,7 @@ export default function CentralAdminPage() {
   const handleRejectUser = async (userId: string) => {
     const { error } = await supabase
       .from("manufacturers")
-      .update({ status: "rejected" } as any)
+      .update({ status: "rejected" })
       .eq("id", userId);
 
     if (error) {
@@ -187,7 +188,7 @@ export default function CentralAdminPage() {
         license_number: newUserForm.license_number,
         factory_address: newUserForm.factory_address || null,
         status: "approved"
-      } as any);
+      });
 
       if (profileError) throw profileError;
 
