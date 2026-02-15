@@ -14,13 +14,178 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      manufacturers: {
+        Row: {
+          company_name: string
+          created_at: string
+          factory_address: string | null
+          id: string
+          license_number: string
+          user_id: string
+        }
+        Insert: {
+          company_name: string
+          created_at?: string
+          factory_address?: string | null
+          id?: string
+          license_number: string
+          user_id: string
+        }
+        Update: {
+          company_name?: string
+          created_at?: string
+          factory_address?: string | null
+          id?: string
+          license_number?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      medicine_codes: {
+        Row: {
+          code: string
+          code_type: string
+          created_at: string
+          id: string
+          medicine_id: string
+          scan_location: string | null
+          scanned_at: string | null
+          status: string
+        }
+        Insert: {
+          code: string
+          code_type?: string
+          created_at?: string
+          id?: string
+          medicine_id: string
+          scan_location?: string | null
+          scanned_at?: string | null
+          status?: string
+        }
+        Update: {
+          code?: string
+          code_type?: string
+          created_at?: string
+          id?: string
+          medicine_id?: string
+          scan_location?: string | null
+          scanned_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "medicine_codes_medicine_id_fkey"
+            columns: ["medicine_id"]
+            isOneToOne: false
+            referencedRelation: "medicines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      medicines: {
+        Row: {
+          batch_number: string
+          composition: string | null
+          created_at: string
+          distributor_assigned: string | null
+          exp_date: string
+          factory_location: string | null
+          id: string
+          manufacturer_id: string
+          medicine_name: string
+          mfg_date: string
+          packaging_type: string | null
+          quantity: number
+          region_allocation: string | null
+          status: string
+        }
+        Insert: {
+          batch_number: string
+          composition?: string | null
+          created_at?: string
+          distributor_assigned?: string | null
+          exp_date: string
+          factory_location?: string | null
+          id?: string
+          manufacturer_id: string
+          medicine_name: string
+          mfg_date: string
+          packaging_type?: string | null
+          quantity?: number
+          region_allocation?: string | null
+          status?: string
+        }
+        Update: {
+          batch_number?: string
+          composition?: string | null
+          created_at?: string
+          distributor_assigned?: string | null
+          exp_date?: string
+          factory_location?: string | null
+          id?: string
+          manufacturer_id?: string
+          medicine_name?: string
+          mfg_date?: string
+          packaging_type?: string | null
+          quantity?: number
+          region_allocation?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "medicines_manufacturer_id_fkey"
+            columns: ["manufacturer_id"]
+            isOneToOne: false
+            referencedRelation: "manufacturers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scan_logs: {
+        Row: {
+          code_id: string
+          id: string
+          result: string
+          scan_location: string | null
+          scanned_at: string
+        }
+        Insert: {
+          code_id: string
+          id?: string
+          result?: string
+          scan_location?: string | null
+          scanned_at?: string
+        }
+        Update: {
+          code_id?: string
+          id?: string
+          result?: string
+          scan_location?: string | null
+          scanned_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_logs_code_id_fkey"
+            columns: ["code_id"]
+            isOneToOne: false
+            referencedRelation: "medicine_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_medicine_codes: {
+        Args: {
+          p_code_type?: string
+          p_medicine_id: string
+          p_quantity: number
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
