@@ -20,6 +20,7 @@ export default function CentralAdminPage() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true); // Block rendering until auth checked
 
   // Data state
   const [manufacturers, setManufacturers] = useState<any[]>([]);
@@ -33,28 +34,35 @@ export default function CentralAdminPage() {
   });
 
   useEffect(() => {
-    // IMPORTANT: Central Admin uses HARDCODED credentials only
-    // If user has Supabase session, sign them out (they're a manufacturer)
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const checkAuthAndInit = async () => {
+      // IMPORTANT: Central Admin uses HARDCODED credentials only
+      // If user has Supabase session, sign them out (they're a manufacturer)
+      const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         // Manufacturer is logged in - kick them out from admin
-        supabase.auth.signOut();
+        await supabase.auth.signOut();
         toast({
           title: "Access Denied",
           description: "Central Admin uses separate credentials. Manufacturer accounts cannot access this portal.",
-          variant: "destructive"
+          variant: "destructive",
+          duration: 5000
         });
+        setIsCheckingAuth(false);
+        return; // Stay on public view
       }
-    });
 
-    // Check if admin was logged in before refresh
-    const savedAdminState = localStorage.getItem('medsecure_admin_logged_in');
-    if (savedAdminState === 'true') {
-      setIsAdmin(true);
-      loadAllAdminData();
-    } else {
-      loadPublicData();
-    }
+      // Check if admin was logged in before refresh
+      const savedAdminState = localStorage.getItem('medsecure_admin_logged_in');
+      if (savedAdminState === 'true') {
+        setIsAdmin(true);
+        await loadAllAdminData();
+      } else {
+        await loadPublicData();
+      }
+      setIsCheckingAuth(false);
+    };
+
+    checkAuthAndInit();
   }, []);
 
   const loadPublicData = async () => {

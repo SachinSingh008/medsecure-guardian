@@ -66,25 +66,31 @@ export default function ManufacturerPortalPage() {
   });
 
   useEffect(() => {
-    // IMPORTANT: Check if admin is logged in (localStorage)
-    const adminLoggedIn = localStorage.getItem('medsecure_admin_logged_in');
-    if (adminLoggedIn === 'true') {
-      // Admin trying to access manufacturer portal - block them
-      localStorage.removeItem('medsecure_admin_logged_in');
-      toast({
-        title: "Access Denied",
-        description: "This is the Manufacturer Portal. Admin access is through /admin with Admin credentials.",
-        variant: "destructive",
-        duration: 7000
-      });
-    }
+    const checkAuthAndInit = async () => {
+      // IMPORTANT: Check if admin is logged in (localStorage)
+      const adminLoggedIn = localStorage.getItem('medsecure_admin_logged_in');
+      if (adminLoggedIn === 'true') {
+        // Admin trying to access manufacturer portal - block them
+        localStorage.removeItem('medsecure_admin_logged_in');
+        // Also sign out any Supabase session
+        await supabase.auth.signOut();
+        toast({
+          title: "Access Denied",
+          description: "This is the Manufacturer Portal. Admin access is through /admin with Admin credentials.",
+          variant: "destructive",
+          duration: 7000
+        });
+        return; // Show login screen
+      }
 
-    supabase.auth.onAuthStateChange((_event, session) => {
+      supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user ?? null);
+      });
+      const { data: { session } } = await supabase.auth.getSession();
       setUser(session?.user ?? null);
-    });
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
+    };
+
+    checkAuthAndInit();
   }, []);
 
   useEffect(() => {
