@@ -161,6 +161,11 @@ export default function ManufacturerPortalPage() {
           } as any);
           if (profileError) throw profileError;
         }
+
+        // IMPORTANT: Sign them out immediately since they're pending
+        await supabase.auth.signOut();
+        setUser(null);
+
         toast({
           title: "Account Created!",
           description: "Your account is pending approval from Central Admin. You will be notified once approved.",

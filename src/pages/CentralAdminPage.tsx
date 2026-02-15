@@ -200,6 +200,11 @@ export default function CentralAdminPage() {
     }
   };
 
+  // Computed lists based on status
+  const pendingUsers = manufacturers.filter((m: any) => m.status === 'pending');
+  const approvedUsers = manufacturers.filter((m: any) => m.status === 'approved');
+  const rejectedUsers = manufacturers.filter((m: any) => m.status === 'rejected');
+
   // PUBLIC VIEW
   if (!isAdmin) {
     return (
