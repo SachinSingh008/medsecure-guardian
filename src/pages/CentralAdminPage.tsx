@@ -1,67 +1,124 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 import {
-  Shield, Factory, Store, QrCode, AlertTriangle, BarChart3, Users,
-  Lock, Download, Bell, MapPin, Eye, Search, Ban, CheckCircle2, FileText, Key, Activity
+  Shield, Factory, Store, QrCode, AlertTriangle, Users,
+  Lock, Download, Bell, MapPin, Eye, Search, Ban, CheckCircle2, FileText, Key, Activity, LogOut
 } from "lucide-react";
 
-const overviewCards = [
-  { label: "Registered Manufacturers", value: "1,247", icon: Factory },
-  { label: "Registered Pharmacies", value: "45,832", icon: Store },
-  { label: "Active Codes", value: "12.4M", icon: QrCode },
-  { label: "Verified Scans Today", value: "89,241", icon: CheckCircle2 },
-  { label: "Suspicious Today", value: "342", icon: AlertTriangle },
-  { label: "Counterfeit Alerts", value: "78", icon: Shield },
-  { label: "Recalled Batches", value: "14", icon: Ban },
-  { label: "Expired Medicines", value: "2,341", icon: FileText },
-];
-
-const manufacturers = [
-  { name: "Sun Pharmaceuticals", license: "MFG/MH/2024/0847", status: "Verified", batches: 142 },
-  { name: "Cipla Ltd.", license: "MFG/MH/2023/1234", status: "Verified", batches: 230 },
-  { name: "Dr. Reddy's", license: "MFG/TG/2024/0567", status: "Pending", batches: 98 },
-  { name: "Aurobindo Pharma", license: "MFG/AP/2023/0912", status: "Suspended", batches: 0 },
-];
-
-const auditLogs = [
-  { action: "Batch Recalled", user: "Admin_Central", target: "SP-CET-2024-0830", time: "2 hours ago" },
-  { action: "Manufacturer Suspended", user: "Admin_Central", target: "Aurobindo Pharma", time: "1 day ago" },
-  { action: "Codes Generated", user: "Sun Pharma API", target: "50,000 QR codes", time: "2 days ago" },
-  { action: "Region Alert Created", user: "System", target: "Mumbai Zone A", time: "3 days ago" },
-];
-
 export default function CentralAdminPage() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  if (!isLoggedIn) {
+  const [manufacturers, setManufacturers] = useState<any[]>([]);
+  const [medicines, setMedicines] = useState<any[]>([]);
+  const [codes, setCodes] = useState<any[]>([]);
+  const [scanLogs, setScanLogs] = useState<any[]>([]);
+  const [codeSearch, setCodeSearch] = useState("");
+  const [searchResult, setSearchResult] = useState<any>(null);
+
+  useEffect(() => {
+    supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (user) loadAll();
+  }, [user]);
+
+  const loadAll = async () => {
+    const [mfgRes, medRes, codeRes, logRes] = await Promise.all([
+      supabase.from("manufacturers").select("*").order("created_at", { ascending: false }),
+      supabase.from("medicines").select("*").order("created_at", { ascending: false }),
+      supabase.from("medicine_codes").select("*").order("created_at", { ascending: false }).limit(100),
+      supabase.from("scan_logs").select("*").order("scanned_at", { ascending: false }).limit(50),
+    ]);
+    setManufacturers(mfgRes.data || []);
+    setMedicines(medRes.data || []);
+    setCodes(codeRes.data || []);
+    setScanLogs(logRes.data || []);
+  };
+
+  const handleAuth = async () => {
+    setLoading(true);
+    try {
+      if (authMode === "signup") {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        toast({ title: "Admin account created!" });
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const searchCode = async () => {
+    if (!codeSearch.trim()) return;
+    const { data } = await supabase.from("medicine_codes").select("*").eq("code", codeSearch.trim()).maybeSingle();
+    if (data) {
+      const { data: med } = await supabase.from("medicines").select("*").eq("id", (data as any).medicine_id).single();
+      setSearchResult({ code: data, medicine: med });
+    } else {
+      setSearchResult(null);
+      toast({ title: "Code not found", variant: "destructive" });
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  if (!user) {
     return (
       <div className="min-h-screen bg-muted flex items-center justify-center pt-16">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-card rounded-xl p-8 shadow-elevated border border-border w-full max-w-md"
-        >
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+          className="bg-card rounded-xl p-8 shadow-elevated border border-border w-full max-w-md">
           <div className="text-center mb-6">
             <div className="w-14 h-14 rounded-xl bg-hero-gradient flex items-center justify-center mx-auto mb-4 shadow-elevated">
               <Shield className="w-7 h-7 text-primary-foreground" />
             </div>
             <h1 className="text-2xl font-bold text-foreground">Central Admin Portal</h1>
-            <p className="text-sm text-muted-foreground mt-1">MedSecure Authority Dashboard — Secure Login</p>
+            <p className="text-sm text-muted-foreground mt-1">MedSecure Authority Dashboard</p>
           </div>
           <div className="space-y-4">
-            <Input placeholder="Admin ID" className="h-12" />
-            <Input placeholder="Password" type="password" className="h-12" />
-            <Input placeholder="2FA Code" className="h-12" />
-            <Button variant="navy" className="w-full h-12" onClick={() => setIsLoggedIn(true)}>
-              <Lock className="w-4 h-4 mr-2" /> Secure Login
+            <Input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} className="h-12" />
+            <Input placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} className="h-12" />
+            <Button variant="navy" className="w-full h-12" onClick={handleAuth} disabled={loading}>
+              <Lock className="w-4 h-4 mr-2" /> {loading ? "Please wait..." : authMode === "login" ? "Secure Login" : "Sign Up"}
             </Button>
+            <p className="text-center text-sm text-muted-foreground">
+              {authMode === "login" ? "No account? " : "Already have one? "}
+              <button className="text-secondary underline" onClick={() => setAuthMode(authMode === "login" ? "signup" : "login")}>
+                {authMode === "login" ? "Sign Up" : "Login"}
+              </button>
+            </p>
           </div>
         </motion.div>
       </div>
     );
   }
+
+  const totalCodes = codes.length;
+  const activeMeds = medicines.filter(m => m.status === "Active").length;
+  const expiredMeds = medicines.filter(m => m.status === "Expired").length;
+  const recalledMeds = medicines.filter(m => m.status === "Recalled").length;
 
   return (
     <div className="min-h-screen bg-muted pt-16">
@@ -72,8 +129,8 @@ export default function CentralAdminPage() {
             <p className="text-primary-foreground/60 text-sm">MedSecure Authority Portal — National Overview</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="hero-outline" size="sm"><Bell className="w-4 h-4 mr-1" /> Alerts</Button>
-            <Button variant="hero" size="sm"><Download className="w-4 h-4 mr-1" /> Export</Button>
+            <Button variant="hero" size="sm" onClick={loadAll}><Activity className="w-4 h-4 mr-1" /> Refresh</Button>
+            <Button variant="hero-outline" size="sm" onClick={handleLogout}><LogOut className="w-4 h-4 mr-1" /> Logout</Button>
           </div>
         </div>
       </div>
@@ -81,12 +138,18 @@ export default function CentralAdminPage() {
       <div className="container mx-auto px-4 py-8 space-y-8">
         {/* Overview Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {overviewCards.map((card, i) => (
-            <motion.div
-              key={card.label}
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
-              className="bg-card rounded-xl p-5 shadow-card border border-border"
-            >
+          {[
+            { label: "Manufacturers", value: manufacturers.length, icon: Factory },
+            { label: "Total Medicines", value: medicines.length, icon: QrCode },
+            { label: "Active Batches", value: activeMeds, icon: CheckCircle2 },
+            { label: "Total Codes", value: totalCodes, icon: Key },
+            { label: "Total Scans", value: scanLogs.length, icon: Search },
+            { label: "Expired", value: expiredMeds, icon: AlertTriangle },
+            { label: "Recalled", value: recalledMeds, icon: Ban },
+            { label: "Scan Logs", value: scanLogs.length, icon: Activity },
+          ].map((card, i) => (
+            <motion.div key={card.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+              className="bg-card rounded-xl p-5 shadow-card border border-border">
               <card.icon className="w-5 h-5 text-secondary mb-2" />
               <p className="text-2xl font-bold text-foreground">{card.value}</p>
               <p className="text-xs text-muted-foreground">{card.label}</p>
@@ -99,44 +162,72 @@ export default function CentralAdminPage() {
             <TabsTrigger value="manufacturers">Manufacturers</TabsTrigger>
             <TabsTrigger value="medicines">Medicines & Batches</TabsTrigger>
             <TabsTrigger value="codes">Code Database</TabsTrigger>
-            <TabsTrigger value="distributors">Distributors</TabsTrigger>
-            <TabsTrigger value="fraud">Fraud Detection</TabsTrigger>
-            <TabsTrigger value="recall">Recall & Safety</TabsTrigger>
+            <TabsTrigger value="scans">Scan Logs</TabsTrigger>
           </TabsList>
 
-          {/* Manufacturers Tab */}
+          {/* Manufacturers */}
           <TabsContent value="manufacturers">
             <div className="bg-card rounded-xl shadow-card border border-border overflow-hidden">
-              <div className="p-4 border-b border-border flex items-center justify-between">
+              <div className="p-4 border-b border-border">
                 <h3 className="font-bold text-foreground">Registered Manufacturers</h3>
-                <div className="flex gap-2">
-                  <Input placeholder="Search..." className="h-9 w-48" />
-                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead><tr className="border-b border-border bg-muted">
-                    {["Name", "License", "Status", "Active Batches", "Actions"].map(h => (
+                    {["Company", "License", "Address", "Registered"].map(h => (
                       <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
-                    {manufacturers.map((m) => (
-                      <tr key={m.license} className="border-b border-border hover:bg-muted/50">
-                        <td className="p-3 font-medium text-foreground">{m.name}</td>
-                        <td className="p-3 font-mono text-xs text-muted-foreground">{m.license}</td>
+                    {manufacturers.length === 0 && (
+                      <tr><td colSpan={4} className="p-8 text-center text-muted-foreground">No manufacturers registered yet.</td></tr>
+                    )}
+                    {manufacturers.map((m: any) => (
+                      <tr key={m.id} className="border-b border-border hover:bg-muted/50">
+                        <td className="p-3 font-medium text-foreground">{m.company_name}</td>
+                        <td className="p-3 font-mono text-xs text-muted-foreground">{m.license_number}</td>
+                        <td className="p-3 text-muted-foreground">{m.factory_address || "-"}</td>
+                        <td className="p-3 text-muted-foreground">{new Date(m.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Medicines */}
+          <TabsContent value="medicines">
+            <div className="bg-card rounded-xl shadow-card border border-border overflow-hidden">
+              <div className="p-4 border-b border-border">
+                <h3 className="font-bold text-foreground">All Medicines & Batches</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-border bg-muted">
+                    {["Medicine", "Batch #", "MFG", "EXP", "Qty", "Region", "Distributor", "Status"].map(h => (
+                      <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {medicines.length === 0 && (
+                      <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">No medicines yet.</td></tr>
+                    )}
+                    {medicines.map((m: any) => (
+                      <tr key={m.id} className="border-b border-border hover:bg-muted/50">
+                        <td className="p-3 font-medium text-foreground">{m.medicine_name}</td>
+                        <td className="p-3 font-mono text-xs text-muted-foreground">{m.batch_number}</td>
+                        <td className="p-3 text-muted-foreground">{m.mfg_date}</td>
+                        <td className="p-3 text-muted-foreground">{m.exp_date}</td>
+                        <td className="p-3 text-foreground">{m.quantity}</td>
+                        <td className="p-3 text-muted-foreground">{m.region_allocation || "-"}</td>
+                        <td className="p-3 text-muted-foreground">{m.distributor_assigned || "-"}</td>
                         <td className="p-3">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            m.status === "Verified" ? "bg-success/10 text-success" :
-                            m.status === "Pending" ? "bg-warning/10 text-warning" :
+                            m.status === "Active" ? "bg-success/10 text-success" :
+                            m.status === "Expired" ? "bg-warning/10 text-warning" :
                             "bg-destructive/10 text-destructive"
                           }`}>{m.status}</span>
-                        </td>
-                        <td className="p-3 text-foreground">{m.batches}</td>
-                        <td className="p-3 flex gap-1">
-                          <button className="p-1.5 rounded hover:bg-muted"><Eye className="w-4 h-4 text-muted-foreground" /></button>
-                          <button className="p-1.5 rounded hover:bg-muted"><CheckCircle2 className="w-4 h-4 text-success" /></button>
-                          <button className="p-1.5 rounded hover:bg-destructive/10"><Ban className="w-4 h-4 text-destructive" /></button>
                         </td>
                       </tr>
                     ))}
@@ -146,139 +237,82 @@ export default function CentralAdminPage() {
             </div>
           </TabsContent>
 
-          {/* Medicines Tab */}
-          <TabsContent value="medicines">
-            <div className="bg-card rounded-xl p-6 shadow-card border border-border">
-              <h3 className="font-bold text-foreground mb-4">All Batch Records</h3>
-              <div className="flex gap-3 mb-4">
-                <Input placeholder="Search by batch number..." className="h-10 max-w-sm" />
-                <Button variant="outline" size="sm"><Search className="w-4 h-4 mr-1" /> Filter</Button>
-              </div>
-              <p className="text-muted-foreground text-sm">Showing 14,283 batch records across 1,247 manufacturers. Use filters to narrow down.</p>
-            </div>
-          </TabsContent>
-
           {/* Code Database */}
           <TabsContent value="codes">
             <div className="bg-card rounded-xl p-6 shadow-card border border-border">
               <h3 className="font-bold text-foreground mb-4">Code Database Search</h3>
-              <div className="grid sm:grid-cols-2 gap-4 mb-4">
-                <div><label className="text-sm font-medium text-foreground mb-1 block">Search by QR Code</label><Input placeholder="QR-..." className="h-10" /></div>
-                <div><label className="text-sm font-medium text-foreground mb-1 block">Search by Foil Code</label><Input placeholder="FOIL-..." className="h-10" /></div>
-              </div>
-              <Button variant="hero" size="sm"><Search className="w-4 h-4 mr-1" /> Search Code</Button>
-            </div>
-          </TabsContent>
-
-          {/* Distributors */}
-          <TabsContent value="distributors">
-            <div className="bg-card rounded-xl p-6 shadow-card border border-border">
-              <h3 className="font-bold text-foreground mb-4">Distributors & Pharmacies</h3>
-              <div className="grid sm:grid-cols-3 gap-4">
-                <div className="p-4 rounded-lg bg-muted text-center">
-                  <Store className="w-8 h-8 text-secondary mx-auto mb-2" />
-                  <p className="text-2xl font-bold text-foreground">45,832</p>
-                  <p className="text-sm text-muted-foreground">Registered Pharmacies</p>
-                </div>
-                <div className="p-4 rounded-lg bg-muted text-center">
-                  <Users className="w-8 h-8 text-accent mx-auto mb-2" />
-                  <p className="text-2xl font-bold text-foreground">3,421</p>
-                  <p className="text-sm text-muted-foreground">Distributors</p>
-                </div>
-                <div className="p-4 rounded-lg bg-muted text-center">
-                  <MapPin className="w-8 h-8 text-warning mx-auto mb-2" />
-                  <p className="text-2xl font-bold text-foreground">28</p>
-                  <p className="text-sm text-muted-foreground">States Covered</p>
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* Fraud Detection */}
-          <TabsContent value="fraud">
-            <div className="space-y-4">
-              <div className="bg-card rounded-xl p-6 shadow-card border border-border">
-                <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-destructive" /> Live Counterfeit Heatmap
-                </h3>
-                <div className="h-64 rounded-xl bg-muted flex items-center justify-center border border-border">
-                  <div className="text-center">
-                    <MapPin className="w-12 h-12 text-muted-foreground/30 mx-auto mb-2" />
-                    <p className="text-muted-foreground">Interactive India heatmap</p>
-                    <p className="text-xs text-muted-foreground">Red zones: high suspicious activity • Green: verified zones</p>
-                  </div>
-                </div>
-              </div>
-              <div className="grid sm:grid-cols-3 gap-4">
-                <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-5 text-center">
-                  <p className="text-3xl font-bold text-destructive">342</p>
-                  <p className="text-sm text-muted-foreground">Suspicious Today</p>
-                </div>
-                <div className="bg-warning/5 border border-warning/20 rounded-xl p-5 text-center">
-                  <p className="text-3xl font-bold text-warning">128</p>
-                  <p className="text-sm text-muted-foreground">Region Mismatches</p>
-                </div>
-                <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-5 text-center">
-                  <p className="text-3xl font-bold text-destructive">12</p>
-                  <p className="text-sm text-muted-foreground">High-Risk Pharmacies</p>
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* Recall & Safety */}
-          <TabsContent value="recall">
-            <div className="bg-card rounded-xl p-6 shadow-card border border-border">
-              <h3 className="font-bold text-foreground mb-4">Recall & Safety Notices</h3>
               <div className="flex gap-3 mb-6">
-                <Button variant="destructive" size="sm"><AlertTriangle className="w-4 h-4 mr-1" /> Mark Batch Recalled</Button>
-                <Button variant="outline" size="sm"><Bell className="w-4 h-4 mr-1" /> Broadcast Warning</Button>
+                <Input placeholder="Enter exact code (e.g. QR-A1B2C3D4E5F6)" value={codeSearch} onChange={e => setCodeSearch(e.target.value)} className="h-10 max-w-md" />
+                <Button variant="hero" size="sm" onClick={searchCode}><Search className="w-4 h-4 mr-1" /> Search</Button>
               </div>
-              <p className="text-sm text-muted-foreground">14 active recalls across 6 manufacturers.</p>
+              {searchResult && (
+                <div className="p-4 rounded-lg bg-muted space-y-2">
+                  <p className="text-sm"><strong>Code:</strong> {searchResult.code.code}</p>
+                  <p className="text-sm"><strong>Type:</strong> {searchResult.code.code_type}</p>
+                  <p className="text-sm"><strong>Status:</strong> {searchResult.code.status}</p>
+                  <p className="text-sm"><strong>Medicine:</strong> {searchResult.medicine?.medicine_name || "Unknown"}</p>
+                  <p className="text-sm"><strong>Batch:</strong> {searchResult.medicine?.batch_number || "N/A"}</p>
+                </div>
+              )}
+              <h4 className="font-bold text-foreground mt-6 mb-3">Recent Codes</h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-border bg-muted">
+                    {["Code", "Type", "Status", "Created"].map(h => (
+                      <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {codes.map((c: any) => (
+                      <tr key={c.id} className="border-b border-border hover:bg-muted/50">
+                        <td className="p-3 font-mono text-xs text-foreground">{c.code}</td>
+                        <td className="p-3 text-muted-foreground">{c.code_type}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            c.status === "Unused" ? "bg-success/10 text-success" : "bg-warning/10 text-warning"
+                          }`}>{c.status}</span>
+                        </td>
+                        <td className="p-3 text-muted-foreground">{new Date(c.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Scan Logs */}
+          <TabsContent value="scans">
+            <div className="bg-card rounded-xl shadow-card border border-border overflow-hidden">
+              <div className="p-4 border-b border-border">
+                <h3 className="font-bold text-foreground">Recent Scan Logs</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-border bg-muted">
+                    {["Scan ID", "Code ID", "Location", "Result", "Time"].map(h => (
+                      <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {scanLogs.length === 0 && (
+                      <tr><td colSpan={5} className="p-8 text-center text-muted-foreground">No scans yet.</td></tr>
+                    )}
+                    {scanLogs.map((log: any) => (
+                      <tr key={log.id} className="border-b border-border hover:bg-muted/50">
+                        <td className="p-3 font-mono text-xs text-muted-foreground">{log.id.slice(0, 8)}...</td>
+                        <td className="p-3 font-mono text-xs text-muted-foreground">{log.code_id.slice(0, 8)}...</td>
+                        <td className="p-3 text-foreground">{log.scan_location || "-"}</td>
+                        <td className="p-3 text-foreground">{log.result}</td>
+                        <td className="p-3 text-muted-foreground">{new Date(log.scanned_at).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </TabsContent>
         </Tabs>
-
-        {/* Audit Logs */}
-        <div className="bg-card rounded-xl p-6 shadow-card border border-border">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-foreground flex items-center gap-2"><Activity className="w-5 h-5 text-secondary" /> Audit Logs</h3>
-            <Button variant="outline" size="sm"><Download className="w-4 h-4 mr-1" /> Export Report</Button>
-          </div>
-          <div className="space-y-2">
-            {auditLogs.map((log, i) => (
-              <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted">
-                <div>
-                  <span className="font-medium text-foreground text-sm">{log.action}</span>
-                  <span className="text-muted-foreground text-sm"> — {log.target}</span>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">{log.user}</p>
-                  <p className="text-xs text-muted-foreground">{log.time}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* API & Notifications */}
-        <div className="grid sm:grid-cols-2 gap-6">
-          <div className="bg-card rounded-xl p-6 shadow-card border border-border">
-            <h3 className="font-bold text-foreground mb-4 flex items-center gap-2"><Key className="w-5 h-5 text-secondary" /> API Management</h3>
-            <div className="space-y-3">
-              <div className="p-3 rounded-lg bg-muted"><p className="text-xs text-muted-foreground">Active API Keys</p><p className="font-bold text-foreground">247</p></div>
-              <div className="p-3 rounded-lg bg-muted"><p className="text-xs text-muted-foreground">API Calls Today</p><p className="font-bold text-foreground">1.2M</p></div>
-            </div>
-          </div>
-          <div className="bg-card rounded-xl p-6 shadow-card border border-border">
-            <h3 className="font-bold text-foreground mb-4 flex items-center gap-2"><Bell className="w-5 h-5 text-secondary" /> Send Notification</h3>
-            <div className="space-y-3">
-              <Button variant="destructive" size="sm" className="w-full">🚨 Counterfeit Warning Alert</Button>
-              <Button variant="outline" size="sm" className="w-full">📢 Public Announcement</Button>
-              <Button variant="outline" size="sm" className="w-full">🔔 Recall Notification</Button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
