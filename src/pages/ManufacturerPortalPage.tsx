@@ -84,6 +84,24 @@ export default function ManufacturerPortalPage() {
   const loadProfile = async () => {
     const { data } = await supabase.from("manufacturers").select("*").eq("user_id", user.id).maybeSingle();
     setProfile(data as ManufacturerProfile | null);
+
+    // Check approval status
+    const profileStatus = (data as any)?.status;
+    if (profileStatus === 'pending') {
+      toast({
+        title: "Account Pending Approval",
+        description: "Your account is awaiting approval from Central Admin. You cannot create batches yet.",
+        variant: "default",
+        duration: 6000
+      });
+    } else if (profileStatus === 'rejected') {
+      toast({
+        title: "Account Rejected",
+        description: "Your manufacturer account was rejected. Please contact support.",
+        variant: "destructive",
+        duration: 6000
+      });
+    }
   };
 
   const loadMedicines = async () => {
@@ -99,15 +117,23 @@ export default function ManufacturerPortalPage() {
       if (authMode === "signup") {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        // Create manufacturer profile
+        // Create manufacturer profile with PENDING status
         const { data: { user: newUser } } = await supabase.auth.getUser();
         if (newUser) {
           const { error: profileError } = await supabase.from("manufacturers").insert({
-            user_id: newUser.id, company_name: companyName, license_number: licenseNumber, factory_address: factoryAddress
+            user_id: newUser.id,
+            company_name: companyName,
+            license_number: licenseNumber,
+            factory_address: factoryAddress,
+            status: "pending"  // PENDING by default, admin must approve
           } as any);
           if (profileError) throw profileError;
         }
-        toast({ title: "Account created!", description: "You are now logged in." });
+        toast({
+          title: "Account Created!",
+          description: "Your account is pending approval from Central Admin. You will be notified once approved.",
+          duration: 7000
+        });
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -122,6 +148,26 @@ export default function ManufacturerPortalPage() {
 
   const handleCreateBatch = async () => {
     if (!profile) return;
+
+    // Check approval status
+    const profileStatus = (profile as any).status;
+    if (profileStatus === 'pending') {
+      toast({
+        title: "Account Pending Approval",
+        description: "Your account must be approved by Central Admin before you can create batches.",
+        variant: "destructive"
+      });
+      return;
+    }
+    if (profileStatus === 'rejected') {
+      toast({
+        title: "Account Rejected",
+        description: "Your account was rejected. Please contact support.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       const { data, error } = await supabase.from("medicines").insert({
@@ -293,11 +339,10 @@ export default function ManufacturerPortalPage() {
                         <td className="p-3 text-muted-foreground">{m.region_allocation || "-"}</td>
                         <td className="p-3 text-muted-foreground">{m.distributor_assigned || "-"}</td>
                         <td className="p-3">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            m.status === "Active" ? "bg-success/10 text-success" :
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${m.status === "Active" ? "bg-success/10 text-success" :
                             m.status === "Expired" ? "bg-warning/10 text-warning" :
-                            "bg-destructive/10 text-destructive"
-                          }`}>{m.status}</span>
+                              "bg-destructive/10 text-destructive"
+                            }`}>{m.status}</span>
                         </td>
                         <td className="p-3">
                           <button onClick={() => viewCodes(m.id)} className="p-1.5 rounded hover:bg-muted">
