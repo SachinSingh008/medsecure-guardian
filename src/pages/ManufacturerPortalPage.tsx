@@ -5,9 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { QRCodeSVG } from "qrcode.react";
 import {
   Factory, Package, QrCode, AlertTriangle, BarChart3, User, Shield,
-  Plus, Download, Eye, Edit, Bell, Lock, TrendingUp, LogOut, Copy
+  Plus, Download, Eye, Edit, Bell, Lock, TrendingUp, LogOut, Copy,
+  Search, CheckCircle2, Check, X, UserPlus, Clock
 } from "lucide-react";
 
 type AuthMode = "login" | "signup";
@@ -65,14 +67,20 @@ export default function ManufacturerPortalPage() {
     distributor_assigned: "", code_type: "QR", notes: "",
   });
 
+  // UI State
+  const [activeTab, setActiveTab] = useState("batches");
+
   useEffect(() => {
-    const checkAuthAndInit = async () => {
-      // IMPORTANT: Check if admin is logged in (localStorage)
+    // 1. Set up the auth listener immediately
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    // 2. Check initial state and admin status
+    const checkInit = async () => {
       const adminLoggedIn = localStorage.getItem('medsecure_admin_logged_in');
       if (adminLoggedIn === 'true') {
-        // Admin trying to access manufacturer portal - block them
         localStorage.removeItem('medsecure_admin_logged_in');
-        // Also sign out any Supabase session
         await supabase.auth.signOut();
         toast({
           title: "Access Denied",
@@ -80,17 +88,19 @@ export default function ManufacturerPortalPage() {
           variant: "destructive",
           duration: 7000
         });
-        return; // Show login screen
+        return;
       }
 
-      supabase.auth.onAuthStateChange((_event, session) => {
-        setUser(session?.user ?? null);
-      });
       const { data: { session } } = await supabase.auth.getSession();
       setUser(session?.user ?? null);
     };
 
-    checkAuthAndInit();
+    checkInit();
+
+    // Cleanup subscription
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -153,29 +163,38 @@ export default function ManufacturerPortalPage() {
     const { data: profData } = await supabase.from("manufacturers").select("id").eq("user_id", user.id).maybeSingle();
     if (!profData) return;
     const { data } = await supabase.from("medicines").select("*").eq("manufacturer_id", (profData as any).id).order("created_at", { ascending: false });
-    setMedicines((data as Medicine[]) || []);
+    const medicinesList = (data as Medicine[]) || [];
+    setMedicines(medicinesList);
+
+    // Check for last viewed batch to restore codes
+    const lastBatchId = localStorage.getItem("medsecure_last_batch_id");
+    if (lastBatchId && medicinesList.some(m => m.id === lastBatchId)) {
+      const { data: codes } = await supabase.from("medicine_codes").select("*").eq("medicine_id", lastBatchId);
+      setGeneratedCodes((codes as MedicineCode[]) || []);
+      setSelectedMedicineId(lastBatchId);
+    }
   };
 
   const handleAuth = async () => {
     setLoading(true);
     try {
       if (authMode === "signup") {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error, data } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
+
         // Create manufacturer profile with PENDING status
-        const { data: { user: newUser } } = await supabase.auth.getUser();
-        if (newUser) {
+        if (data.user) {
           const { error: profileError } = await supabase.from("manufacturers").insert({
-            user_id: newUser.id,
+            user_id: data.user.id,
             company_name: companyName,
             license_number: licenseNumber,
             factory_address: factoryAddress,
-            status: "pending"  // PENDING by default, admin must approve
+            status: "pending"
           } as any);
           if (profileError) throw profileError;
         }
 
-        // IMPORTANT: Sign them out immediately since they're pending
+        // Sign out immediately
         await supabase.auth.signOut();
         setUser(null);
 
@@ -185,8 +204,13 @@ export default function ManufacturerPortalPage() {
           duration: 7000
         });
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error, data } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+
+        // Force state update immediately to skip waiting for listener
+        if (data.user) {
+          setUser(data.user);
+        }
         toast({ title: "Welcome back!" });
       }
     } catch (err: any) {
@@ -256,6 +280,8 @@ export default function ManufacturerPortalPage() {
         factory_location: "", quantity: "10", packaging_type: "Strip", region_allocation: "",
         distributor_assigned: "", code_type: "QR", notes: "",
       });
+      // Switch to codes tab
+      setActiveTab("codes");
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -267,6 +293,8 @@ export default function ManufacturerPortalPage() {
     const { data } = await supabase.from("medicine_codes").select("*").eq("medicine_id", medicineId);
     setGeneratedCodes((data as MedicineCode[]) || []);
     setSelectedMedicineId(medicineId);
+    localStorage.setItem("medsecure_last_batch_id", medicineId); // Persist selection
+    setActiveTab("codes"); // Switch to codes tab
   };
 
   const copyCode = (code: string) => {
@@ -354,7 +382,7 @@ export default function ManufacturerPortalPage() {
           ))}
         </div>
 
-        <Tabs defaultValue="batches" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="bg-card border border-border">
             <TabsTrigger value="batches">Batch Management</TabsTrigger>
             <TabsTrigger value="create">Create Batch</TabsTrigger>
@@ -466,22 +494,91 @@ export default function ManufacturerPortalPage() {
           {/* Generated Codes */}
           <TabsContent value="codes">
             <div className="bg-card rounded-xl p-6 shadow-card border border-border">
-              <h3 className="font-bold text-foreground mb-4">Generated Verification Codes</h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <h3 className="font-bold text-foreground">Generated Verification Codes</h3>
+                <div className="w-full sm:w-64">
+                  <select
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm focus:ring-2 focus:ring-primary"
+                    value={selectedMedicineId || ""}
+                    onChange={(e) => {
+                      if (e.target.value) viewCodes(e.target.value);
+                    }}
+                  >
+                    <option value="">Select a batch to view codes...</option>
+                    {medicines.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.medicine_name} ({m.batch_number})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               {generatedCodes.length === 0 ? (
-                <p className="text-muted-foreground text-sm">Select a batch from Batch Management or create a new batch to see codes.</p>
+                <div className="text-center py-12 border-2 border-dashed border-border rounded-xl bg-muted/30">
+                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                    <QrCode className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <h4 className="text-foreground font-medium mb-1">No codes to display</h4>
+                  <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                    Select a batch from the dropdown above to view its generated codes, or create a new batch.
+                  </p>
+                </div>
               ) : (
                 <>
-                  <p className="text-sm text-muted-foreground mb-4">{generatedCodes.length} codes generated. Share these codes with your packaging team.</p>
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-96 overflow-y-auto">
+                  <div className="flex justify-between items-center mb-4 bg-muted/50 p-3 rounded-lg border border-border">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-success" />
+                      <p className="text-sm text-foreground font-medium">
+                        {generatedCodes.length} codes found
+                      </p>
+                    </div>
+                    <Button variant="outline" size="sm" className="h-8" onClick={() => {
+                      const allCodes = generatedCodes.map(c => c.code).join("\n");
+                      navigator.clipboard.writeText(allCodes);
+                      toast({ title: "Copied All!", description: `${generatedCodes.length} codes copied to clipboard.` });
+                    }}>
+                      <Copy className="w-3.5 h-3.5 mr-2" /> Copy All
+                    </Button>
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                     {generatedCodes.map(c => (
-                      <div key={c.id} className="flex items-center justify-between p-3 rounded-lg bg-muted">
-                        <div>
-                          <p className="font-mono text-sm text-foreground">{c.code}</p>
-                          <p className="text-xs text-muted-foreground">{c.code_type} • {c.status}</p>
+                      <div key={c.id} className="flex flex-col p-4 rounded-lg bg-card border border-border hover:shadow-md transition-all group">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border">{c.code_type}</span>
+                            <span className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded border ${c.status === 'active' || c.status === 'Unused' ? 'bg-success/10 text-success border-success/20' : 'bg-muted-foreground/10 text-muted-foreground border-border'
+                              }`}>{c.status}</span>
+                          </div>
+                          <button
+                            onClick={() => copyCode(c.code)}
+                            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                            title="Copy Code"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
                         </div>
-                        <button onClick={() => copyCode(c.code)} className="p-1.5 rounded hover:bg-background">
-                          <Copy className="w-4 h-4 text-muted-foreground" />
-                        </button>
+                        {c.code_type === "QR" ? (
+                          <div className="flex flex-col items-center gap-3">
+                            <div className="bg-white p-3 rounded-lg border-2 border-border shadow-sm">
+                              <QRCodeSVG
+                                value={`https://medsecure-guardian.vercel.app/verify?code=${encodeURIComponent(c.code)}`}
+                                size={120}
+                                level="M"
+                                includeMargin={false}
+                              />
+                            </div>
+                            <p className="font-mono text-xs text-foreground font-medium tracking-wide text-center break-all">{c.code}</p>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="w-32 h-32 rounded-lg bg-muted/50 border-2 border-dashed border-border flex items-center justify-center">
+                              <QrCode className="w-12 h-12 text-muted-foreground/50" />
+                            </div>
+                            <p className="font-mono text-xs text-foreground font-medium tracking-wide text-center break-all">{c.code}</p>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

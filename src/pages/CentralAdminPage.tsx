@@ -68,26 +68,50 @@ export default function CentralAdminPage() {
 
   const loadPublicData = async () => {
     // Load only approved manufacturers for public view
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("manufacturers")
       .select("*")
       .eq("status", "approved")
       .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error loading public data:", error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to connect to Supabase. Check your internet connection or ad blockers.",
+        variant: "destructive"
+      });
+    }
     setManufacturers(data || []);
   };
 
   const loadAllAdminData = async () => {
-    // Load ALL data for admin view
-    const [mfgRes, medRes, codeRes, logRes] = await Promise.all([
-      supabase.from("manufacturers").select("*").order("created_at", { ascending: false }),
-      supabase.from("medicines").select("*").order("created_at", { ascending: false }),
-      supabase.from("medicine_codes").select("*").order("created_at", { ascending: false }).limit(200),
-      supabase.from("scan_logs").select("*").order("scanned_at", { ascending: false }).limit(100),
-    ]);
-    setManufacturers(mfgRes.data || []);
-    setMedicines(medRes.data || []);
-    setCodes(codeRes.data || []);
-    setScanLogs(logRes.data || []);
+    try {
+      // Load ALL data for admin view
+      const [mfgRes, medRes, codeRes, logRes] = await Promise.all([
+        supabase.from("manufacturers").select("*").order("created_at", { ascending: false }),
+        supabase.from("medicines").select("*").order("created_at", { ascending: false }),
+        supabase.from("medicine_codes").select("*").order("created_at", { ascending: false }).limit(200),
+        supabase.from("scan_logs").select("*").order("scanned_at", { ascending: false }).limit(100),
+      ]);
+
+      if (mfgRes.error) throw mfgRes.error;
+      if (medRes.error) throw medRes.error;
+      if (codeRes.error) throw codeRes.error;
+      if (logRes.error) throw logRes.error;
+
+      setManufacturers(mfgRes.data || []);
+      setMedicines(medRes.data || []);
+      setCodes(codeRes.data || []);
+      setScanLogs(logRes.data || []);
+    } catch (error: any) {
+      console.error("Error loading admin data:", error);
+      toast({
+        title: "Data Load Error",
+        description: error.message || "Failed to fetch data",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleAdminLogin = async () => {

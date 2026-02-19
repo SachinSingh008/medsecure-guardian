@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 import {
   QrCode, Tablet, CheckCircle2, AlertTriangle, XCircle,
   MapPin, History, Gift, Factory, Truck, Store, User, Search, Camera, Loader2
@@ -26,13 +28,15 @@ const statusConfig: Record<string, { icon: any; label: string; color: string; bg
 };
 
 export default function VerifyMedicinePage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<VerifyStatus>("idle");
   const [result, setResult] = useState<MedicineResult | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleVerify = async () => {
-    if (!code.trim()) return;
+  const handleVerify = useCallback(async (codeValue?: string) => {
+    const codeToVerify = codeValue || code;
+    if (!codeToVerify.trim()) return;
     setLoading(true);
     setStatus("idle");
     setResult(null);
@@ -42,7 +46,7 @@ export default function VerifyMedicinePage() {
       const { data: codeData, error } = await supabase
         .from("medicine_codes")
         .select("*")
-        .eq("code", code.trim())
+        .eq("code", codeToVerify.trim())
         .maybeSingle();
 
       if (error) throw error;
@@ -85,15 +89,14 @@ export default function VerifyMedicinePage() {
       } as any);
 
       const scanCount = (count || 0) + 1;
-      setResult({ code: codeData, medicine, manufacturer, scanCount });
 
       // Determine status
-      const codeStatus = (codeData as any).status;
       const medStatus = (medicine as any)?.status;
+      let finalCodeStatus = (codeData as any).status;
 
       if (medStatus === "Recalled") {
         setStatus("recalled");
-      } else if (codeStatus === "Sold" || scanCount > 1) {
+      } else if (finalCodeStatus === "Sold" || scanCount > 1) {
         // Mark as suspicious if already scanned
         setStatus("suspicious");
       } else if (medicine && new Date((medicine as any).exp_date) < new Date()) {
@@ -102,13 +105,44 @@ export default function VerifyMedicinePage() {
         setStatus("genuine");
         // Mark code as Sold
         await supabase.from("medicine_codes").update({ status: "Sold", scanned_at: new Date().toISOString() } as any).eq("id", (codeData as any).id);
+        finalCodeStatus = "Sold"; // Update local status for display
       }
+
+      // Set result with UPDATED status
+      setResult({
+        code: { ...codeData, status: finalCodeStatus },
+        medicine,
+        manufacturer,
+        scanCount
+      });
+
     } catch (err: any) {
       console.error(err);
       setStatus("not_found");
     } finally {
       setLoading(false);
     }
+  }, [code]);
+
+  // Check for code in URL on mount
+  useEffect(() => {
+    const codeParam = searchParams.get("code");
+    if (codeParam && !code) {
+      setCode(codeParam);
+      // Auto-verify after a short delay to ensure state is set
+      setTimeout(() => {
+        handleVerify(codeParam);
+      }, 100);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleRedeem = () => {
+    toast({
+      title: "Points Redeemed!",
+      description: "10 MedPoints have been added to your wallet.",
+      duration: 5000,
+    });
   };
 
   const statusInfo = status !== "idle" ? statusConfig[status] : null;
@@ -222,7 +256,7 @@ export default function VerifyMedicinePage() {
                 <p className="text-secondary-foreground/80 mb-4 text-sm">
                   Thank you for verifying your medicine. Redeem points for health benefits.
                 </p>
-                <Button variant="navy" size="sm">Redeem Points</Button>
+                <Button variant="navy" size="sm" onClick={handleRedeem}>Redeem Points</Button>
               </motion.div>
             )}
           </div>
