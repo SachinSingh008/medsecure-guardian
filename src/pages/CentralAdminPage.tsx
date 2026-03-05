@@ -31,8 +31,9 @@ export default function CentralAdminPage() {
 
   // User management state
   const [newUserForm, setNewUserForm] = useState({
-    company_name: "", license_number: "", factory_address: "", email: "", password: ""
+    company_name: "", factory_address: "", password: ""
   });
+  const [nextLicense, setNextLicense] = useState("LIC-001");
 
   useEffect(() => {
     const checkAuthAndInit = async () => {
@@ -104,6 +105,18 @@ export default function CentralAdminPage() {
       setMedicines(medRes.data || []);
       setCodes(codeRes.data || []);
       setScanLogs(logRes.data || []);
+
+      // Calculate next license based on approved/registered manufacturers
+      const nums = (mfgRes.data || [])
+        .map(m => {
+          if (!m.license_number) return 0;
+          const match = m.license_number.match(/LIC-(\d+)/);
+          return match ? parseInt(match[1], 10) : 0;
+        })
+        .filter(n => !isNaN(n));
+      const max = nums.length > 0 ? Math.max(...nums) : 0;
+      setNextLicense(`LIC-${String(max + 1).padStart(3, "0")}`);
+
     } catch (error: any) {
       console.error("Error loading admin data:", error);
       toast({
@@ -183,21 +196,23 @@ export default function CentralAdminPage() {
   };
 
   const handleCreateUser = async () => {
-    if (!newUserForm.company_name || !newUserForm.license_number || !newUserForm.email || !newUserForm.password) {
+    if (!newUserForm.company_name || !newUserForm.password || !nextLicense) {
       toast({ title: "Validation Error", description: "Please fill all required fields", variant: "destructive" });
       return;
     }
 
+    const assignedEmail = `${nextLicense}@medsecure.com`.toLowerCase();
+
     try {
       // Create auth user
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: newUserForm.email,
+        email: assignedEmail,
         password: newUserForm.password,
       });
 
       if (signUpError) {
         if (signUpError.message.includes("already registered") || signUpError.message.includes("already exists")) {
-          throw new Error(`Email ${newUserForm.email} is already registered. Please use a different email.`);
+          throw new Error(`System Error: The generated email ${assignedEmail} is already registered.`);
         }
         throw signUpError;
       }
@@ -209,16 +224,16 @@ export default function CentralAdminPage() {
       const { error: profileError } = await supabase.from("manufacturers").insert({
         user_id: newUser.id,
         company_name: newUserForm.company_name,
-        license_number: newUserForm.license_number,
+        license_number: nextLicense,
         factory_address: newUserForm.factory_address || null,
         status: "approved"
       });
 
       if (profileError) throw profileError;
 
-      toast({ title: "User Created Successfully!", description: `${newUserForm.company_name} can now login` });
-      setNewUserForm({ company_name: "", license_number: "", factory_address: "", email: "", password: "" });
-      loadAllAdminData();
+      toast({ title: "Company Created Successfully!", description: `${newUserForm.company_name} can now login using License Number: ${nextLicense}` });
+      setNewUserForm({ company_name: "", factory_address: "", password: "" });
+      loadAllAdminData(); // This will recalculate the nextLicense
     } catch (err: any) {
       console.error("Error creating user:", err);
       toast({ title: "Error Creating User", description: err.message, variant: "destructive" });
@@ -426,20 +441,17 @@ export default function CentralAdminPage() {
                   <Input value={newUserForm.company_name} onChange={e => setNewUserForm(f => ({ ...f, company_name: e.target.value }))} className="h-10" />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-foreground mb-1.5 block">License Number *</label>
-                  <Input value={newUserForm.license_number} onChange={e => setNewUserForm(f => ({ ...f, license_number: e.target.value }))} className="h-10" />
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">Auto-Generated License Number</label>
+                  <Input value={nextLicense} disabled className="h-10 bg-muted text-muted-foreground font-mono" />
                 </div>
                 <div className="sm:col-span-2">
                   <label className="text-sm font-medium text-foreground mb-1.5 block">Factory Address</label>
                   <Input value={newUserForm.factory_address} onChange={e => setNewUserForm(f => ({ ...f, factory_address: e.target.value }))} className="h-10" />
                 </div>
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-1.5 block">Email *</label>
-                  <Input type="email" value={newUserForm.email} onChange={e => setNewUserForm(f => ({ ...f, email: e.target.value }))} className="h-10" />
-                </div>
-                <div>
+                <div className="sm:col-span-2">
                   <label className="text-sm font-medium text-foreground mb-1.5 block">Password *</label>
                   <Input type="password" value={newUserForm.password} onChange={e => setNewUserForm(f => ({ ...f, password: e.target.value }))} className="h-10" />
+                  <p className="text-xs text-muted-foreground mt-1.5">Manufacturer will log in using their License Number ({nextLicense}) directly.</p>
                 </div>
               </div>
               <Button variant="hero" onClick={handleCreateUser}>

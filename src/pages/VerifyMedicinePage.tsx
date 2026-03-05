@@ -3,11 +3,13 @@ import { useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Scanner } from "@yudiel/react-qr-scanner";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import {
   QrCode, Tablet, CheckCircle2, AlertTriangle, XCircle,
-  MapPin, History, Gift, Factory, Truck, Store, User, Search, Camera, Loader2
+  MapPin, History, Gift, Factory, Truck, Store, User, Search, Camera, Loader2, Shield
 } from "lucide-react";
 
 type VerifyStatus = "idle" | "genuine" | "suspicious" | "expired" | "recalled" | "not_found";
@@ -33,10 +35,15 @@ export default function VerifyMedicinePage() {
   const [status, setStatus] = useState<VerifyStatus>("idle");
   const [result, setResult] = useState<MedicineResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   const handleVerify = useCallback(async (codeValue?: string) => {
     const codeToVerify = codeValue || code;
     if (!codeToVerify.trim()) return;
+
+    // Hide confirmation screen if it was open
+    setShowConfirmation(false);
+
     setLoading(true);
     setStatus("idle");
     setResult(null);
@@ -129,10 +136,8 @@ export default function VerifyMedicinePage() {
     const codeParam = searchParams.get("code");
     if (codeParam && !code) {
       setCode(codeParam);
-      // Auto-verify after a short delay to ensure state is set
-      setTimeout(() => {
-        handleVerify(codeParam);
-      }, 100);
+      // Instead of auto-verifying, show the confirmation screen
+      setShowConfirmation(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -164,19 +169,86 @@ export default function VerifyMedicinePage() {
       <div className="container mx-auto px-4 -mt-8 pb-20">
         {/* Input */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="bg-card rounded-xl p-8 shadow-elevated border border-border max-w-2xl mx-auto mb-8">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Input placeholder="Enter QR Code / Tablet Code (e.g. QR-A1B2C3D4E5F6)"
-              value={code} onChange={(e) => setCode(e.target.value)}
-              className="flex-1 h-12" onKeyDown={(e) => e.key === "Enter" && handleVerify()} />
-            <Button variant="hero" className="h-12" onClick={handleVerify} disabled={loading}>
-              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
-              Verify Now
-            </Button>
-          </div>
+          className="bg-card rounded-xl p-4 sm:p-8 shadow-elevated border border-border max-w-2xl mx-auto mb-8">
+          <Tabs defaultValue="enter" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsTrigger value="enter" className="text-sm sm:text-base"><Tablet className="w-4 h-4 mr-2" /> Enter Code</TabsTrigger>
+              <TabsTrigger value="scan" className="text-sm sm:text-base"><QrCode className="w-4 h-4 mr-2" /> Scan QR</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="enter" className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input placeholder="Enter QR Code / Tablet Code (e.g. QR-A1B2C3D4E5F6)"
+                  value={code} onChange={(e) => setCode(e.target.value)}
+                  className="flex-1 h-12" onKeyDown={(e) => e.key === "Enter" && handleVerify()} />
+                <Button variant="hero" className="h-12 w-full sm:w-auto" onClick={() => handleVerify()} disabled={loading}>
+                  {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
+                  Verify Now
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="scan">
+              <div className="w-full max-w-sm mx-auto overflow-hidden rounded-xl border-2 border-primary/20 bg-black aspect-square flex items-center justify-center">
+                <Scanner
+                  onScan={(result) => {
+                    if (result && result.length > 0) {
+                      const scannedCode = result[0].rawValue;
+                      if (!scannedCode) return;
+                      // Only trigger verify if we scanned a new code (wait for handleVerify state update or pass directly)
+                      setCode(scannedCode);
+                      handleVerify(scannedCode);
+                    }
+                  }}
+                  components={{
+                    audio: false,
+                    zoom: false,
+                    finder: true
+                  }}
+                  styles={{
+                    container: { width: "100%", height: "100%" }
+                  }}
+                />
+              </div>
+              <p className="text-center text-sm text-muted-foreground mt-4">Point your camera at the medicine's QR code</p>
+            </TabsContent>
+          </Tabs>
         </motion.div>
 
-        {status !== "idle" && statusInfo && (
+        {/* Confirmation Screen */}
+        {showConfirmation && (
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            className="max-w-md mx-auto bg-card rounded-xl p-8 border border-border text-center shadow-elevated mb-8 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-secondary"></div>
+            <div className="w-16 h-16 bg-secondary/10 text-secondary rounded-full flex items-center justify-center mx-auto mb-4">
+              <Shield className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-foreground mb-2">Verification Required</h2>
+            <p className="text-muted-foreground mb-6">
+              You scanned the medicine code: <br />
+              <span className="font-mono bg-muted px-2 py-1 rounded text-foreground font-medium mt-2 inline-block break-all">{code}</span>
+            </p>
+            <p className="text-sm text-foreground mb-6">Do you want to proceed with verifying this medication?</p>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => {
+                setShowConfirmation(false);
+                setCode("");
+                // Remove param from URL without refreshing
+                const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+                window.history.pushState({ path: newUrl }, '', newUrl);
+              }}>
+                Cancel
+              </Button>
+              <Button variant="hero" className="flex-1" onClick={() => handleVerify()} disabled={loading}>
+                {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
+                Verify Now
+              </Button>
+            </div>
+          </motion.div>
+        )}
+
+        {!showConfirmation && status !== "idle" && statusInfo && (
           <div className="max-w-4xl mx-auto space-y-6">
             {/* Status */}
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}

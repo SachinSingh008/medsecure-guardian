@@ -12,8 +12,6 @@ import {
   Search, CheckCircle2, Check, X, UserPlus, Clock
 } from "lucide-react";
 
-type AuthMode = "login" | "signup";
-
 interface ManufacturerProfile {
   id: string;
   company_name: string;
@@ -47,12 +45,8 @@ interface MedicineCode {
 
 export default function ManufacturerPortalPage() {
   const [user, setUser] = useState<any>(null);
-  const [authMode, setAuthMode] = useState<AuthMode>("login");
-  const [email, setEmail] = useState("");
+  const [loginLicense, setLoginLicense] = useState("");
   const [password, setPassword] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [licenseNumber, setLicenseNumber] = useState("");
-  const [factoryAddress, setFactoryAddress] = useState("");
   const [loading, setLoading] = useState(false);
 
   const [profile, setProfile] = useState<ManufacturerProfile | null>(null);
@@ -176,45 +170,33 @@ export default function ManufacturerPortalPage() {
   };
 
   const handleAuth = async () => {
+    if (!loginLicense || !password) {
+      toast({ title: "Validation Error", description: "Please enter your License Number and Password", variant: "destructive" });
+      return;
+    }
+
     setLoading(true);
     try {
-      if (authMode === "signup") {
-        const { error, data } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
+      const assignedEmail = `${loginLicense}@medsecure.com`.toLowerCase();
+      const { error, data } = await supabase.auth.signInWithPassword({
+        email: assignedEmail,
+        password
+      });
 
-        // Create manufacturer profile with PENDING status
-        if (data.user) {
-          const { error: profileError } = await supabase.from("manufacturers").insert({
-            user_id: data.user.id,
-            company_name: companyName,
-            license_number: licenseNumber,
-            factory_address: factoryAddress,
-            status: "pending"
-          } as any);
-          if (profileError) throw profileError;
+      if (error) {
+        if (error.message.includes("Invalid login credentials")) {
+          throw new Error("Invalid License Number or Password. If you don't have an account, contact the Central Admin.");
         }
-
-        // Sign out immediately
-        await supabase.auth.signOut();
-        setUser(null);
-
-        toast({
-          title: "Account Created!",
-          description: "Your account is pending approval from Central Admin. You will be notified once approved.",
-          duration: 7000
-        });
-      } else {
-        const { error, data } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-
-        // Force state update immediately to skip waiting for listener
-        if (data.user) {
-          setUser(data.user);
-        }
-        toast({ title: "Welcome back!" });
+        throw error;
       }
+
+      // Force state update immediately to skip waiting for listener
+      if (data.user) {
+        setUser(data.user);
+      }
+      toast({ title: "Welcome back!" });
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Login Error", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -320,28 +302,40 @@ export default function ManufacturerPortalPage() {
             </div>
             <h1 className="text-2xl font-bold text-foreground">Manufacturer Portal</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {authMode === "login" ? "Login to manage your batches" : "Create your manufacturer account"}
+              Login securely with your License Number
             </p>
           </div>
           <div className="space-y-4">
-            {authMode === "signup" && (
-              <>
-                <Input placeholder="Company Name" value={companyName} onChange={e => setCompanyName(e.target.value)} className="h-12" />
-                <Input placeholder="License Number" value={licenseNumber} onChange={e => setLicenseNumber(e.target.value)} className="h-12" />
-                <Input placeholder="Factory Address" value={factoryAddress} onChange={e => setFactoryAddress(e.target.value)} className="h-12" />
-              </>
-            )}
-            <Input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} className="h-12" />
-            <Input placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} className="h-12" />
-            <Button variant="hero" className="w-full h-12" onClick={handleAuth} disabled={loading}>
-              <Lock className="w-4 h-4 mr-2" /> {loading ? "Please wait..." : authMode === "login" ? "Login" : "Sign Up"}
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">License Number</label>
+              <Input
+                placeholder="e.g. LIC-001"
+                value={loginLicense}
+                onChange={e => setLoginLicense(e.target.value.toUpperCase())}
+                className="h-12 font-mono uppercase"
+                onKeyDown={e => e.key === 'Enter' && handleAuth()}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground mb-1.5 block">Password</label>
+              <Input
+                placeholder="Your password"
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="h-12"
+                onKeyDown={e => e.key === 'Enter' && handleAuth()}
+              />
+            </div>
+            <Button variant="hero" className="w-full h-12 mt-2" onClick={handleAuth} disabled={loading}>
+              <Lock className="w-4 h-4 mr-2" /> {loading ? "Authenticating..." : "Login to Portal"}
             </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              {authMode === "login" ? "No account? " : "Already have an account? "}
-              <button className="text-secondary underline" onClick={() => setAuthMode(authMode === "login" ? "signup" : "login")}>
-                {authMode === "login" ? "Sign Up" : "Login"}
-              </button>
-            </p>
+            <div className="mt-6 pt-6 border-t border-border text-center">
+              <p className="text-sm text-muted-foreground">
+                Don't have an account? <br />
+                <span className="text-xs mt-1 block">Contact Central Admin to register your manufacturing company.</span>
+              </p>
+            </div>
           </div>
         </motion.div>
       </div>
@@ -563,7 +557,7 @@ export default function ManufacturerPortalPage() {
                           <div className="flex flex-col items-center gap-3">
                             <div className="bg-white p-3 rounded-lg border-2 border-border shadow-sm">
                               <QRCodeSVG
-                                value={`https://medsecure-guardian.vercel.app/verify?code=${encodeURIComponent(c.code)}`}
+                                value={`${window.location.origin}/verify?code=${encodeURIComponent(c.code)}`}
                                 size={120}
                                 level="M"
                                 includeMargin={false}
@@ -572,11 +566,8 @@ export default function ManufacturerPortalPage() {
                             <p className="font-mono text-xs text-foreground font-medium tracking-wide text-center break-all">{c.code}</p>
                           </div>
                         ) : (
-                          <div className="flex flex-col items-center gap-2">
-                            <div className="w-32 h-32 rounded-lg bg-muted/50 border-2 border-dashed border-border flex items-center justify-center">
-                              <QrCode className="w-12 h-12 text-muted-foreground/50" />
-                            </div>
-                            <p className="font-mono text-xs text-foreground font-medium tracking-wide text-center break-all">{c.code}</p>
+                          <div className="flex flex-col items-center justify-center py-6">
+                            <p className="font-mono text-sm text-foreground font-bold tracking-wider text-center break-all">{c.code}</p>
                           </div>
                         )}
                       </div>
